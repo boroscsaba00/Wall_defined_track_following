@@ -1,28 +1,32 @@
 <launch>
-    
-    
+
+    <!-- Gazebo szerver a saját forburger világgal -->
     <include file="$(find-pkg-share gazebo_ros)/launch/gzserver.launch.py">
-        <arg name="world" value="$(find-pkg-share turtlebot3_gazebo)/worlds/turtlebot3_world.world"/>
+        <arg name="world" value="$(find-pkg-share projektmunka)/forburger/model.sdf"/>
     </include>
 
+    <!-- Gazebo kliens (grafikus felület) -->
     <include file="$(find-pkg-share gazebo_ros)/launch/gzclient.launch.py"/>
-    
 
+    <!-- TurtleBot3 spawnolása
+    <node pkg="gazebo_ros" 
+          exec="spawn_entity.py" 
+          name="spawn_turtlebot3" 
+          output="screen"
+          args="-entity turtlebot3 -file $(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_burger/model.sdf -x 0.0 -y 0.0 -z 0.1"/>
+ -->
+    <!-- Static TF map->odom -->
     <node pkg="tf2_ros" 
           exec="static_transform_publisher" 
           name="map_to_odom_fixed" 
           output="screen"
           args="0.0 0.0 0.0 0.0 0.0 0.0 map odom"/>
 
-    <node pkg="projektmunka" 
-          exec="wall_following" 
-          name="wall_follower_processor" 
-          output="screen">
-        
+    <!-- Saját projekt node-ok -->
+    <node pkg="projektmunka" exec="wall_following" name="wall_follower_processor" output="screen">
         <param name="use_sim_time" value="true"/>
         <param name="target_frame" value="odom"/>
-        
-        </node>
+    </node>
 
     <node pkg="projektmunka" exec="wall_following" name="path_mid_node" output="screen">
         <param name="use_sim_time" value="true"/>
@@ -30,7 +34,7 @@
         <param name="odom_topic_name" value="/odom"/>
         <param name="max_size" value="3000"/>
     </node>
-    
+
     <node pkg="projektmunka" exec="wall_following" name="path_left_node" output="screen">
         <param name="use_sim_time" value="true"/>
         <param name="path_topic_name" value="/path_left"/>
@@ -45,6 +49,7 @@
         <param name="max_size" value="3000"/>
     </node>
 
+    <!-- RViz megnyitása -->
     <node pkg="rviz2" 
           exec="rviz2" 
           name="rviz2" 
