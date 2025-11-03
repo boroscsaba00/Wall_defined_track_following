@@ -1,0 +1,53 @@
+<launch>
+    
+    
+    <include file="$(find-pkg-share gazebo_ros)/launch/gzserver.launch.py">
+        <arg name="world" value="$(find-pkg-share turtlebot3_gazebo)/worlds/turtlebot3_world.world"/>
+    </include>
+
+    <include file="$(find-pkg-share gazebo_ros)/launch/gzclient.launch.py"/>
+    
+
+    <node pkg="tf2_ros" 
+          exec="static_transform_publisher" 
+          name="map_to_odom_fixed" 
+          output="screen"
+          args="0.0 0.0 0.0 0.0 0.0 0.0 map odom"/>
+
+    <node pkg="projektmunka" 
+          exec="wall_following" 
+          name="wall_follower_processor" 
+          output="screen">
+        
+        <param name="use_sim_time" value="true"/>
+        <param name="target_frame" value="odom"/>
+        
+        </node>
+
+    <node pkg="projektmunka" exec="wall_following" name="path_mid_node" output="screen">
+        <param name="use_sim_time" value="true"/>
+        <param name="path_topic_name" value="/path_mid"/>
+        <param name="odom_topic_name" value="/odom"/>
+        <param name="max_size" value="3000"/>
+    </node>
+    
+    <node pkg="projektmunka" exec="wall_following" name="path_left_node" output="screen">
+        <param name="use_sim_time" value="true"/>
+        <param name="path_topic_name" value="/path_left"/>
+        <param name="odom_topic_name" value="/odom_wheel_left"/>
+        <param name="max_size" value="3000"/>
+    </node>
+
+    <node pkg="projektmunka" exec="wall_following" name="path_right_node" output="screen">
+        <param name="use_sim_time" value="true"/>
+        <param name="path_topic_name" value="/path_right"/>
+        <param name="odom_topic_name" value="/odom_wheel_right"/>
+        <param name="max_size" value="3000"/>
+    </node>
+
+    <node pkg="rviz2" 
+          exec="rviz2" 
+          name="rviz2" 
+          args="-d $(find-pkg-share projektmunka)/rviz/wall_follower.rviz"/>
+
+</launch>

@@ -1,0 +1,18 @@
+<launch>
+     <!-- Start rosbag play -->
+    <executable
+        cmd="ros2 bag play --clock 1000 $(find-pkg-share gyak3)/bag"
+        output="screen"
+        name="rosbag_play"
+        shell="true"
+    />
+
+    <!-- Node -->
+    <node pkg="wall_track" exec="test_scan" name="scan_visualization" output="screen"/>
+    <!--Gazebo-->
+    <node pkg="wall_track" exec="wall_track.launch" name="gazebo" output="screen" args="$(find-pkg-share wall_track)/worlds/model.sdf"/>
+
+    <!-- RVIZ -->
+    <node pkg="rviz2" exec="rviz2" name="rviz2" args="-d $(find-pkg-share wall_track)/rviz/wall_track.rviz"/>
+
+</launch>
