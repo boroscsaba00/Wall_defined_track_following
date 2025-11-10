@@ -26,12 +26,13 @@ class TurtleBot3WallFollower(Node):
 
         self.L = 0.287
 
-        self.Kp = 1.5 
-        self.Ki = 0.001
-        self.Kd = 0.5
+        self.Kp = 0.8
+        self.Ki = 0.05
+        self.Kd = 0.1
         self.error_integral = 0.0
         self.previous_error = 0.0
         self.target_distance = 0.35 
+        self.LINEAR_SPEED = 0.20
 
         
         self.x = 0.0
@@ -56,6 +57,10 @@ class TurtleBot3WallFollower(Node):
         self.timer = self.create_timer(self.dt, self.timer_callback)
         self.scan_data = LaserScan()
 
+        self.cmd.linear.x = 0.05
+        
+        self.pub_cmd.publish(self.cmd)
+
 
     def callback_scan(self, msg: LaserScan):
         """Beérkező LaserScan üzenet elmentése."""
@@ -63,52 +68,101 @@ class TurtleBot3WallFollower(Node):
 
 
     def calculate_control(self):
-        """Falkövetés PID vezérlővel."""
+        """Kozeppont kereses ket fal kozott"""
         scan = self.scan_data
         
         if not scan.ranges:
-            
+            self.get_logger().warn("No scanned data")
             return 0.0
 
+        ranges = np.array(scan.ranges)
         
-        angles = np.linspace(scan.angle_min, scan.angle_max, len(scan.ranges))
-        
-        idx_A = int((90 * math.pi/180 - scan.angle_min) / scan.angle_increment)
-        idx_B = int((100 * math.pi/180 - scan.angle_min) / scan.angle_increment)
+        ranges[np.isinf(ranges) | np.isnan(ranges)] = scan.range_max
 
-        idx_A = max(0, min(len(scan.ranges) - 1, idx_A))
-        idx_B = max(0, min(len(scan.ranges) - 1, idx_B))
+        RIGHT_ANGLE_MAX = -60 * math.pi/180
+        RIGHT_ANGLE_MIN = -90 * math.pi/180
         
-        dist_A = scan.ranges[idx_A]
-        dist_B = scan.ranges[idx_B]
+        LEFT_ANGLE_MIN = 60 * math.pi/180
+        LEFT_ANGLE_MAX = 90 * math.pi/180
 
         
-        current_distance = (dist_A + dist_B) / 2.0 if dist_A < scan.range_max and dist_B < scan.range_max else self.target_distance
+        def angle_to_index(angle_rad):
+            idx = int((angle_rad - scan.angle_min) / scan.angle_increment)
+            
+            return max(0, min(len(ranges) - 1, idx))
 
-        error = self.target_distance - current_distance
+        
+        idx_R_min = angle_to_index(RIGHT_ANGLE_MIN)
+        idx_R_max = angle_to_index(RIGHT_ANGLE_MAX)
+        
+        idx_L_min = angle_to_index(LEFT_ANGLE_MIN)
+        idx_L_max = angle_to_index(LEFT_ANGLE_MAX)
 
+        if idx_R_min < idx_R_max:
+            dist_right = np.min(ranges[idx_R_min:idx_R_max])
+        else: 
+             dist_right = np.min(ranges[idx_R_max:idx_R_min])
+             
+        if idx_L_min < idx_L_max:
+             dist_left = np.min(ranges[idx_L_min:idx_L_max])
+        else:
+            dist_left = np.min(ranges[idx_L_max:idx_L_min])
+
+        
+        MAX_DIST = 10.0 # Define a high value for open space
+        
+        # Replace the capping logic with this:
+        if dist_right >= scan.range_max * 0.9: # If reading max range (open space)
+            dist_right = MAX_DIST
+        
+        if dist_left >= scan.range_max * 0.9: # If reading max range (open space)
+            dist_left = MAX_DIST
+
+        
+        error = dist_left - dist_right 
+        
+        
         self.error_integral += error * self.dt
         error_derivative = (error - self.previous_error) / self.dt
         
         angular_output = self.Kp * error + self.Ki * self.error_integral + self.Kd * error_derivative
         self.previous_error = error
-
-        idx_front = int((0 - scan.angle_min) / scan.angle_increment)
-        dist_front = scan.ranges[idx_front] if scan.ranges[idx_front] < scan.range_max else 10.0
-
-        if dist_front < 0.4: 
-            linear_output = 0.0
-            angular_output = 0.5
-        else:
-            linear_output = 0.1 
-
         
+        idx_front = angle_to_index(0) 
+        dist_front = ranges[idx_front] if ranges[idx_front] < scan.range_max else 10.0
+
+        LINEAR_SPEED = self.LINEAR_SPEED
+
+        # Define a safety zone
+        SAFETY_DIST = 0.6
+        STOP_DIST = 0.3
+        
+        if dist_front < STOP_DIST:
+            linear_output = 0.0
+            angular_output = np.sign(angular_output) * 1.0 if abs(angular_output) > 0.1 else 1.0 
+
+        elif dist_front < SAFETY_DIST:
+            slowdown_ratio = (dist_front - STOP_DIST) / (SAFETY_DIST - STOP_DIST)
+            
+            linear_output = self.LINEAR_SPEED * slowdown_ratio
+            
+        else:
+            linear_output = self.LINEAR_SPEED
+            
+        linear_output = np.clip(linear_output, 0.0, self.LINEAR_SPEED)
+
+        self.cmd.linear.x = linear_output
+        self.cmd.angular.z = angular_output
+        
+        angular_output = np.clip(angular_output, -1.5, 1.5)
+
         self.cmd.linear.x = linear_output
         self.cmd.angular.z = angular_output
         
         self.pub_cmd.publish(self.cmd)
         
         return angular_output
+      
 
 
     def publish_odom(self, frame_id: str, child_frame_id: str, x: float, y: float, yaw: float, publisher):
