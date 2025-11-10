@@ -14,12 +14,10 @@
           name="spawn_turtlebot3" 
           output="screen"
           args="-entity turtlebot3 -file $(find-pkg-share turtlebot3_gazebo)/models/turtlebot3_burger/model.sdf -x 0.0 -y 0.0 -z 0.1"/>
+          
     <!-- Static TF map->odom -->
-    <node pkg="tf2_ros" 
-          exec="static_transform_publisher" 
-          name="map_to_odom_fixed" 
-          output="screen"
-          args="0.0 0.0 0.0 0.0 0.0 0.0 map odom"/>
+    <node pkg="tf2_ros" exec="static_transform_publisher" 
+      args="0 0 0 0 0 0 base_link base_scan" />
 
     <!-- Saját projekt node-ok -->
     <node pkg="projektmunka" exec="wall_following" name="wall_follower_node" output="screen">
