@@ -25,13 +25,19 @@ class TurtleBot3WallFollower(Node):
         self.target_frame = self.get_parameter('target_frame').value 
 
         self.L = 0.287
-
-        self.Kp = 1.5 
+        self.Kp = 1.0
         self.Ki = 0.001
-        self.Kd = 0.5
+        self.Kd = 0.5     
         self.error_integral = 0.0
         self.previous_error = 0.0
-        self.target_distance = 0.35 
+        self.TARGET_LINEAR_SPEED = 0.2
+
+        self.SECTOR_LEFT_MIN = 90
+        self.SECTOR_LEFT_MAX = 180
+        self.SECTOR_RIGHT_MIN = 270
+        self.SECTOR_RIGHT_MAX = 360 
+        self.SECTOR_FRONT_MIN = 330
+        self.SECTOR_FRONT_MAX = 30
 
         
         self.x = 0.0
@@ -61,50 +67,86 @@ class TurtleBot3WallFollower(Node):
         """Beérkező LaserScan üzenet elmentése."""
         self.scan_data = msg
 
+    #filtering out irrelevant data
+    def get_sector_min_distance(self, scan_data: LaserScan, min_deg: int, max_deg: int):
+        
+        ranges = np.array(scan_data.ranges)
+        angle_min_rad = scan_data.angle_min
+        angle_increment = scan_data.angle_increment
+        
+        N = len(ranges)
+        
+        start_index = int((np.deg2rad(min_deg) - angle_min_rad) / angle_increment)
+        end_index = int((np.deg2rad(max_deg) - angle_min_rad) / angle_increment)
+        data_slice = []
+        if min_deg > max_deg: 
+            data_slice = np.concatenate((ranges[start_index:], ranges[:end_index]))
+        else:
+            start_index = np.clip(start_index, 0, N)
+            end_index = np.clip(end_index, 0, N)
+            data_slice = ranges[start_index:end_index]
+            
+        valid_distances = data_slice[(data_slice > scan_data.range_min) & (data_slice < scan_data.range_max)]
+        
+        if valid_distances.size > 0:
+            return np.min(valid_distances)
+        else:
+            return scan_data.range_max * 0.9 
 
+            
     def calculate_control(self):
-        """Falkövetés PID vezérlővel."""
         scan = self.scan_data
         
         if not scan.ranges:
-            
+            self.get_logger().warn("No scanned data")
+            self.cmd.linear.x = 0.0
+            self.cmd.angular.z = 0.0
+            self.pub_cmd.publish(self.cmd)
             return 0.0
 
-        
-        angles = np.linspace(scan.angle_min, scan.angle_max, len(scan.ranges))
-        
-        idx_A = int((90 * math.pi/180 - scan.angle_min) / scan.angle_increment)
-        idx_B = int((100 * math.pi/180 - scan.angle_min) / scan.angle_increment)
+        dist_left = self.get_sector_min_distance(scan, self.SECTOR_LEFT_MIN, self.SECTOR_LEFT_MAX)
+        dist_right = self.get_sector_min_distance(scan, self.SECTOR_RIGHT_MIN, self.SECTOR_RIGHT_MAX)
+        dist_front = self.get_sector_min_distance(scan, self.SECTOR_FRONT_MIN, self.SECTOR_FRONT_MAX)
 
-        idx_A = max(0, min(len(scan.ranges) - 1, idx_A))
-        idx_B = max(0, min(len(scan.ranges) - 1, idx_B))
+        error = dist_left - dist_right 
         
-        dist_A = scan.ranges[idx_A]
-        dist_B = scan.ranges[idx_B]
-
+        p_term = self.Kp * error
         
-        current_distance = (dist_A + dist_B) / 2.0 if dist_A < scan.range_max and dist_B < scan.range_max else self.target_distance
-
-        error = self.target_distance - current_distance
-
         self.error_integral += error * self.dt
+        MAX_INTEGRAL = 0.5 
+        self.error_integral = np.clip(self.error_integral, -MAX_INTEGRAL, MAX_INTEGRAL)
+        i_term = self.Ki * self.error_integral
+        #np.clip:clip values to an interval
+
+        # derivative term :damping and prediction
         error_derivative = (error - self.previous_error) / self.dt
-        
-        angular_output = self.Kp * error + self.Ki * self.error_integral + self.Kd * error_derivative
+        d_term = self.Kd * error_derivative
         self.previous_error = error
-
-        idx_front = int((0 - scan.angle_min) / scan.angle_increment)
-        dist_front = scan.ranges[idx_front] if scan.ranges[idx_front] < scan.range_max else 10.0
-
-        if dist_front < 0.4: 
-            linear_output = 0.0
-            angular_output = 0.5
-        else:
-            linear_output = 0.1 
-
         
+        angular_output = p_term + i_term + d_term
+        
+        OBSTACLE_THRESHOLD = 0.4
+        CORNER_DIST_THRESHOLD = 4.0
+
+        if dist_front < OBSTACLE_THRESHOLD:
+            linear_output = 0.0 
+            
+            if dist_left > dist_right:
+                angular_output = 0.5
+            else:
+                angular_output = -0.5
+            
+        # corner detection
+        elif dist_left > CORNER_DIST_THRESHOLD or dist_right > CORNER_DIST_THRESHOLD:
+            
+            linear_output = self.TARGET_LINEAR_SPEED * 0.5
+
+        else:
+            linear_output = self.TARGET_LINEAR_SPEED
+            
+        MAX_ANGULAR_Z = 1.5
+        self.cmd.angular.z = np.clip(angular_output, -MAX_ANGULAR_Z, MAX_ANGULAR_Z)
         self.cmd.linear.x = linear_output
-        self.cmd.angular.z = angular_output
         
         self.pub_cmd.publish(self.cmd)
         
@@ -112,7 +154,7 @@ class TurtleBot3WallFollower(Node):
 
 
     def publish_odom(self, frame_id: str, child_frame_id: str, x: float, y: float, yaw: float, publisher):
-        """Odometria üzenet és TF transzformáció közzététele."""
+        
 
         odom = Odometry()
         odom.header.stamp = self.get_clock().now().to_msg()
@@ -132,10 +174,9 @@ class TurtleBot3WallFollower(Node):
 
 
     def timer_callback(self):
-        """Fő ciklus: Vezérlés, Szimuláció, Odometria, Pontfelhő."""
+        """Vezérlés, Szimuláció, Odometria, Pontfelhő."""
         
         self.calculate_control()
-
         self.x += self.cmd.linear.x * self.dt * math.cos(self.yaw)
         self.y += self.cmd.linear.x * self.dt * math.sin(self.yaw)
         self.yaw += self.cmd.angular.z * self.dt
@@ -164,7 +205,6 @@ class TurtleBot3WallFollower(Node):
 
 
     def publish_wheel_odom(self, wheel_frame: str, publisher):
-        """A kerék TF transzformációjának lekérése és Odometria üzenetként való közzététele."""
         
         now = rclpy.time.Time()
         
@@ -180,8 +220,6 @@ class TurtleBot3WallFollower(Node):
             odom.pose.pose.orientation = trans.transform.rotation
 
             publisher.publish(odom)
-         #else
-             #self.get_logger().warn(f"TF transzformáció ({self.target_frame} -> {wheel_frame}) nem érhető el.")
 
 
     def publish_point_cloud(self):
@@ -216,8 +254,6 @@ class TurtleBot3WallFollower(Node):
             
             
             self.pub_cloud.publish(mapCloud)
-        # else:
-            # self.get_logger().warn(f"TF transzformáció ({self.target_frame} -> {scan.header.frame_id}) nem érhető el.")
 
 
 def main(args=None):
