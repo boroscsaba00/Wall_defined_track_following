@@ -32,10 +32,10 @@ class TurtleBot3WallFollower(Node):
         self.previous_error = 0.0
         self.TARGET_LINEAR_SPEED = 0.2
 
-        self.SECTOR_LEFT_MIN = 90
-        self.SECTOR_LEFT_MAX = 180
+        self.SECTOR_LEFT_MIN = 10
+        self.SECTOR_LEFT_MAX = 90
         self.SECTOR_RIGHT_MIN = 270
-        self.SECTOR_RIGHT_MAX = 360 
+        self.SECTOR_RIGHT_MAX = 350
         self.SECTOR_FRONT_MIN = 330
         self.SECTOR_FRONT_MAX = 30
 

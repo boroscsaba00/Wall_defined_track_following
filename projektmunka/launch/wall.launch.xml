@@ -18,26 +18,6 @@
         <param name="target_frame" value="odom"/>
     </node>
 
-    <node pkg="projektmunka" exec="wall_following" name="path_mid_node" output="screen">
-        <param name="use_sim_time" value="true"/>
-        <param name="path_topic_name" value="/path_mid"/>
-        <param name="odom_topic_name" value="/odom"/>
-        <param name="max_size" value="3000"/>
-    </node>
-
-    <node pkg="projektmunka" exec="wall_following" name="path_left_node" output="screen">
-        <param name="use_sim_time" value="true"/>
-        <param name="path_topic_name" value="/path_left"/>
-        <param name="odom_topic_name" value="/odom_wheel_left"/>
-        <param name="max_size" value="3000"/>
-    </node>
-
-    <node pkg="projektmunka" exec="wall_following" name="path_right_node" output="screen">
-        <param name="use_sim_time" value="true"/>
-        <param name="path_topic_name" value="/path_right"/>
-        <param name="odom_topic_name" value="/odom_wheel_right"/>
-        <param name="max_size" value="3000"/>
-    </node>
 
     <!-- RViz megnyitása -->
     <node pkg="rviz2" 
